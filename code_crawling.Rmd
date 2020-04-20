@@ -1,0 +1,42 @@
+---
+title: "종목코드 웹크롤링"
+output: html_document
+  
+
+---
+- 퀀트 트레이딩 공부를 위한 데이터를 R을 이용해 직접 수집해보도록 하겠습니다. 여기서 쓰이는 코드 및 아이디어는 대부분 <R을 이용한 퀀트 투자 포트폴리오 만들기> 책을 참고하여 작성한 게시물임을 알립니다. 문제가 될시 빛보다 빠르게 삭제하겠습니다. 제가 공부한 내용을 남기고 싶습니다. (책 전체 내용을 무료로 공개하신 저자님의 넓은 아량을 믿습니다...) 
+
+
+
+- 퀀트 트레이딩을 위해 필요한 데이터를 증권사 HTS나 구글 및 야후 파이낸스에서 일일히 다운받고 한번에 취합하기엔 너무 귀찮습니다.(물론 충분한 댓가가 따른다면 기꺼이 하겠습니다만 취준생인지라 시간이 금입니다.)  
+
+
+
+- krx에 상장된 기업은 각각 부여된 코드가 존재합니다. 이 코드를 잘 이용한다면 나중에 url과 잘 조합한다면 모든 종목의 데이터를 가져올 수 있습니다. 
+
+
+# 1. 필요한 라이브러리 로딩
+```{r echo=TRUE, message=FALSE}
+library(httr)
+library(rvest)
+library(readr)
+library(dplyr)
+```
+
+- krx 홈페이지에서 시장정보 -> 주식 -> 종합정보 -> 검색 -> f12 누르기 -> network 탭 -> 검색 초성 ㄱ~ㅎ 중 아무거나 누르기 
+
+
+# 2. krx 데이터를 가져오기 위한 OTP 생성 
+```{r}
+otp_url = "http://marketdata.krx.co.kr/contents/COM/GenerateOTP.jspx?bld=COM%2Ffinder_stkisu&name=form&_=1587389653194"
+
+query = list(bld  =  "COM/finder_stkisu",
+             name = "form")
+otp = GET(otp_url, query = query) %>% 
+  read_html() %>% 
+  html_text()
+print(otp)
+
+```
+
+# 3. 1페이지 데이터 가져오기 
