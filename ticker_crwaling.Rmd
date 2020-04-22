@@ -1,0 +1,179 @@
+---
+title: "KRX에 상장된 모든 종목 티커 크롤링"
+output: 
+  html_document:
+    self_contained: TRUE 
+    keep_md: FALSE 
+    theme: NULL 
+    highlight: NULL
+---
+
+
+KRX에 상장된 기업은 6자리의 종목코드가 존재합니다. 네이버 금융 URL의 querystring으로 종목코드를 넣어 준다면 원하는 기업의 데이터를 가져올 수 있습니다. 모든 종목의 데이터를 가져오기 앞서 모든 종목의 종목 코드를 크롤링해보려합니다.
+
+___
+
+# 1. 필요한 라이브러리 로딩
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+library(dplyr)
+library(httr)
+library(rvest)
+library(readr)
+```
+
+___
+
+# 2. 네이버 금융 - 국내증시 - 시가총액
+___
+
+- 이 페이지엔 시장별 모든 기업이 시가총액순으로 저장되어있습니다. 현재가,시가총액,거래량 등 기업의 여러 데이터가 올라와있습니다. 여기서 각 종목명을 클릭하면 종목코드가 포함된 URL로 이동을 합니다. 저는 이 URL에서 종목코드얻 어어내고자합니다.   
+
+---
+
+> ## 2.1 종목명 크롤링 
+
+```{r warning=FALSE}
+url = "https://finance.naver.com/sise/sise_market_sum.nhn" 
+
+Sys.setlocale("LC_ALL", "English") # 한글이 포함된 데이터를 크롤링시 필요
+name = GET(url) %>% # url의 데이터 가져오기
+  read_html(encoding = 'EUC-KR') %>% # html로 읽음
+  html_table(fill = T) %>% # html을 table로 읽음 
+  .[[2]] %>% # 2번째 테이블
+  .[!is.na(.),] %>% #공백제거
+  .[,2] %>% # 종목명만
+  data.frame() %>% # 데이터프레임 형식
+  na.omit() # NA값 제거
+Sys.setlocale("LC_ALL", "Korean") #다시 한국어
+
+head(name)
+```
+- R에서 한글로 된 데이터를 크롤링할 시스템 언어를 영어로 바꿔야한다고합니다.
+- 먼저 GET함수를 이용해 url에 있는 데이터를 가져오고 읽은 html을 table형식으로 읽습니다. 
+- 2번째 table에 종목명과 그외 데이터가 존재합니다. 또한 공백을 없애고 총 50개의 종목명만 가져옵니다.
+
+___
+
+> ## 2.2 코드 크롤링
+```{r warning=FALSE}
+
+# 코드 크롤링
+read_html(url, encoding = 'EUC-KR') %>% # url을 읽음
+  html_nodes("tbody tr td a") %>% # a 태그 위치
+  html_attr('href') %>% # 링크 속성
+  substr(., start = (nchar(.) - 5), stop = nchar(.)) %>% # 문자 추출
+  unique() %>% # 중복 제거 
+  head()
+
+```
+- 딸린 링크는 a태그 href 속성에 존재합니다. 
+- 얻은 링크에서 코드추 추출하고 중복되는것 없이 출력합니다.
+
+___
+
+# 3. 모든 페이지에서 데이터 가져오기기
+
+___
+
+- for문 을 통해 모든 페이지에서 데이터를 가져오겠습니다. 총 32페이지까지 존재하며 querystring으로 page를 설정해주면 여러 페이지에서 데이터를 가져올수 있습니다.
+```{r echo=TRUE, warning=FALSE,eval=FALSE}
+kospi = data.frame()
+
+#for loop
+for (page in c(1:32)){
+  
+  Sys.setlocale("LC_ALL", "English")
+  
+  # querystring 
+  query = list(page  = page)
+  # 종목명 크롤링
+  
+  name = GET(url, query = query) %>% 
+    read_html(encoding = 'EUC-KR') %>% 
+    html_table(fill = T) %>%  
+    .[[2]] %>% 
+    .[!is.na(.),] %>%
+    .[,2] %>% 
+    data.frame() %>% 
+    na.omit()
+  
+  # 종목 코드 크롤링
+  code = GET(url, query = query) %>% 
+    read_html(encoding = 'EUC-KR') %>% 
+    html_nodes("tbody tr td a") %>% 
+    html_attr('href') %>% 
+    substr(., start = (nchar(.) - 5), stop = nchar(.)) %>% 
+    unique() 
+  
+  # 데이터 프레임 쌓기
+  part = data.frame(n = name, c = code)
+  kospi = rbind(kospi, part)
+  
+  Sys.setlocale("LC_ALL", "Korean")
+}
+# 열 이름 설정 및 csv파일 쓰기
+colnames(kospi) = c("종목명","종목코드")
+write.csv(kospi, "kospi_code_name.csv", row.names = F)
+```
+- 가져온 데이터를 쌓아 한번에 취합하고 csv 확장자로 저장합니다.
+
+___
+
+# 4. 코스닥 데이터 가져오기 
+
+___
+
+코스닥 데이터의 경우 url에서 querystring으로 sosok = 1을 설정해주면 위의 방식과 같은 방식으로 가져올 있습니다.(코스닥은 총 29페이지)
+```{r echo=TRUE, warning=FALSE,eval=FALSE}
+url = "https://finance.naver.com/sise/sise_market_sum.nhn" 
+kosdaq = data.frame()
+for (page in c(1:29)){
+  Sys.setlocale("LC_ALL", "English")
+  
+  # query string
+  query = list(sosok = 1,
+               page  = page)
+  # 종목명 크롤링
+  
+  name = GET(url, query = query) %>% 
+    read_html(encoding = 'EUC-KR') %>% 
+    html_table(fill = T) %>%  
+    .[[2]] %>% 
+    .[!is.na(.),] %>%
+    .[,2] %>% 
+    data.frame() %>% 
+    na.omit()
+  
+  # 종목 코드 크롤링
+  code = GET(url,query = query)%>% 
+    read_html(encoding = 'EUC-KR') %>% 
+    html_nodes("tbody tr td a") %>% 
+    html_attr('href') %>% 
+    substr(., start = (nchar(.) - 5), stop = nchar(.)) %>% 
+    unique() 
+  
+  # 데이터 프레임 쌓기
+  part = data.frame(n = name, c = code)
+  kosdaq = rbind(kosdaq, part)
+  
+  Sys.setlocale("LC_ALL", "Korean")
+}
+
+
+colnames(kosdaq) = c("종목명","종목코드")
+write.csv(kosdaq, "kosdaq_code_name.csv", row.names = F)
+
+# 전체 
+all = rbind(kospi, kosdaq)
+write.csv(all,"krx_code_name.csv", row.names = F)
+```
+- querystring을 설정 해준뒤 for문을 돌립니다.
+
+___
+
+# 5. 마치며
+퀀트 분석을 위한 기초인 데이터 구축을 위한 모든 종목의 코드크롤링 해보았습니다. 공부하면서 이곳저곳 참고하면서 공부해보았는데요 특히 [이곳](https://rpubs.com/Jay2548/518849)에서 많은 도움을 받았습니다. 다음엔 이번에 얻은 종목코드를 이용해 주가를 가져와보도록 하겠습니다.
+
+
+
+
